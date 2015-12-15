@@ -26,6 +26,90 @@ function Yamaha(options) {
         }
     }
 
+    //here go the codes for each button on the remote. I hope they're model independent
+    //one can use them as this.codes[zoneNumber][codeName]
+    this.codes = {
+        //codes for zone 1 (Main zone)
+        1: {
+            //numeric codes
+            '1': '7F0151AE',
+            '2': '7F0152AD',
+            '3': '7F0153AC',
+            '4': '7F0154AB',
+            '5': '7F0155AA',
+            '6': '7F0156A9',
+            '7': '7F0157A8',
+            '8': '7F0158A7',
+            '9': '7F0159A6',
+            '0': '7F015AA5',
+            '+10': '7F015BA4',
+            'ENT': '7F015CA3',
+
+            //operations codes
+            'Play': '7F016897',
+            'Stop': '7F016996',
+            'Pause': '7F016798',
+            'Search-': '7F016A95',
+            'Search+': '7F016E94',
+            'Skip-': '7F016C93',
+            'Skip+': '7F016D92',
+            'FM': '7F015827',
+            'AM': '7F01552A',
+
+            //cursor codes
+            'Up': '7A859D62',
+            'Down': '7A859C63',
+            'Left': '7A859F60',
+            'Right': '7A859E61',
+            'Enter': '7A85DE21',
+            'Return': '7A85AA55',
+            'Level': '7A858679',
+            'On Screen': '7A85847B',
+            'Option': '7A856B14',
+            'Top Menu': '7A85A0DF',
+            'Pop Up Menu': '7A85A4DB'
+
+        },
+        //codes for zone 2
+        2: {
+            //numeric codes
+            '1': '7F01718F',
+            '2': '7F01728C',
+            '3': '7F01738D',
+            '4': '7F01748A',
+            '5': '7F01758B',
+            '6': '7F017688',
+            '7': '7F017789',
+            '8': '7F017886',
+            '9': '7F017986',
+            '0': '7F017A84',
+            '+10': '7F017B85',
+            'ENT': '7F017C82',
+
+            //operations codes
+            'Play': '7F018876',
+            'Stop': '7F018977',
+            'Pause': '7F018779',
+            'Search-': '7F018A74',
+            'Search+': '7F018B75',
+            'Skip-': '7F018C72',
+            'Skip+': '7F018D73',
+            'FM': '7F015927',
+            'AM': '7F015628',
+
+            //cursor codes
+            'Up': '7A852B55',
+            'Down': '7A852C52',
+            'Left': '7A852D53',
+            'Right': '7A852E50',
+            'Enter': '7A852F51',
+            'Return': '7A853C42',
+            'Option': '7A856C12',
+            'Top Menu': '7A85A1DF',
+            'Pop Up Menu': '7A85A5DB'
+
+        }
+    };
 }
 
 /*----------Service methods----------*/
@@ -41,19 +125,19 @@ Yamaha.prototype.activeZoneName = function () {
     return this.getZoneName(this.activeZone);
 };
 
-Yamaha.prototype.createCommand = function (type, container, command) {
+Yamaha.prototype._createCommand = function (type, container, command) {
     return '<YAMAHA_AV cmd="' + type + '"><' + container + '>' + command + '</' + container + '></YAMAHA_AV>';
 };
 
-Yamaha.prototype.createZoneCommand = function (type, zone, command) {
-    return this.createCommand(type, this.getZoneName(zone), command);
+Yamaha.prototype._createZoneCommand = function (type, zone, command) {
+    return this._createCommand(type, this.getZoneName(zone), command);
 };
 
-Yamaha.prototype.createActiveZoneCommand = function (type, command) {
-    return this.createZoneCommand(this.activeZone, command);
+Yamaha.prototype._createActiveZoneCommand = function (type, command) {
+    return this._createZoneCommand(type, this.activeZone, command);
 };
 
-Yamaha.prototype.SendXMLToReceiver = function (bodyText) {
+Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
     var _self = this;
     return new Promise(function (resolve, reject) {
         var request = new XMLHttpRequest();
@@ -95,9 +179,10 @@ Yamaha.prototype.SendXMLToReceiver = function (bodyText) {
  * @param YamahaCall - the metod name to be called
  * @param parameter - argument to pass to the above method
  * @param expectedReturnValue - stop polling when this value meets our requirements
+ * @private
  * @returns {Promise}
  */
-Yamaha.prototype.when = function (YamahaCall, parameter, expectedReturnValue) {
+Yamaha.prototype._when = function (YamahaCall, parameter, expectedReturnValue) {
     var self = this;
     return new Promise(function (resolve, reject) {
         var tries = 0;
@@ -113,6 +198,34 @@ Yamaha.prototype.when = function (YamahaCall, parameter, expectedReturnValue) {
 
         }, 500);
     });
+};
+/**
+ * Simply gets 'On' or 'Off' caption, depending on the incoming state
+ * @param {Boolean} state
+ * @returns {string}
+ * @private
+ */
+Yamaha.prototype._getOnOffCaption = function (state) {
+    return state === true ? 'On' : 'Off';
+};
+
+/**
+ *
+ * @param zone
+ * @param commandType
+ * @param commandName
+ * @private
+ * @returns {Promise}
+ */
+Yamaha.prototype._sendCode = function (zone, commandType, commandName) {
+    if(zone > 1) {
+        zone = 2;
+    }
+    else {
+        zone = 1;
+    }
+    var command = this._createCommand('PUT', 'System', '<Misc><Remote_Signal><Receive><Code>' + this.codes[zone][commandName] + '</Code></Receive></Remote_Signal></Misc>');
+    return this._sendXMLToReceiver(command);
 };
 
 
@@ -144,8 +257,8 @@ Yamaha.prototype.switchPower = function (zone, powerOn) {
         if ((isOn && powerOn) || (!isOn && !powerOn)) {
             return isOn;
         }
-        var command = self.createZoneCommand('PUT', zone, '<Power_Control><Power>' + powerStatus + '</Power></Power_Control>');
-        return self.SendXMLToReceiver(command);
+        var command = self._createZoneCommand('PUT', zone, '<Power_Control><Power>' + powerStatus + '</Power></Power_Control>');
+        return self._sendXMLToReceiver(command);
     });
 };
 
@@ -203,8 +316,8 @@ Yamaha.prototype.powerOffAll = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.setVolumeTo = function (to) {
-    var command = this.createActiveZoneCommand('PUT', '<Volume><Lvl><Val>' + to + '</Val><Exp>1</Exp><Unit>dB</Unit></Lvl></Volume>');
-    return this.SendXMLToReceiver(command);
+    var command = this._createActiveZoneCommand('PUT', '<Volume><Lvl><Val>' + to + '</Val><Exp>1</Exp><Unit>dB</Unit></Lvl></Volume>');
+    return this._sendXMLToReceiver(command);
 };
 
 /**
@@ -259,8 +372,8 @@ Yamaha.prototype.setZone = function (zone) {
  */
 Yamaha.prototype.setInputTo = function (to) {
     var command;
-    command = this.createActiveZoneCommand('PUT', '<Input><Input_Sel>' + to + '</Input_Sel></Input>');
-    return this.SendXMLToReceiver(command);
+    command = this._createActiveZoneCommand('PUT', '<Input><Input_Sel>' + to + '</Input_Sel></Input>');
+    return this._sendXMLToReceiver(command);
 };
 
 /**
@@ -269,8 +382,8 @@ Yamaha.prototype.setInputTo = function (to) {
  */
 Yamaha.prototype.getBasicInfo = function () {
     var _self = this,
-        command = this.createZoneCommand('GET', '<Basic_Status>GetParam</Basic_Status>');
-    return this.SendXMLToReceiver(command).then(function (basicInfo) {
+        command = this._createZoneCommand('GET', '<Basic_Status>GetParam</Basic_Status>');
+    return this._sendXMLToReceiver(command).then(function (basicInfo) {
         return basicInfo.YAMAHA_AV[0][_self.activeZoneName()][0].Basic_Status[0];
     });
 };
@@ -283,6 +396,21 @@ Yamaha.prototype.getVolume = function () {
     return this.getBasicInfo().then(function (basicStatus) {
         return parseInt(basicStatus.Volume[0].Lvl[0].Val[0]._text);
     })
+};
+
+/**
+ *
+ * @param {Boolean} muteState - if true, zone will be muted, else it'll be unmuted
+ * @returns {Promise.<T>}
+ */
+Yamaha.prototype.setMute = function (muteState) {
+    var command = this._createActiveZoneCommand('PUT', '<Volume><Mute>' + this._getOnOffCaption(muteState) + '</Mute></Volume>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.setSleepTimer = function (sleepTimer) {
+    var command = this._createActiveZoneCommand('PUT', '<Power_Control><Sleep>' + sleepTimer + '</Sleep></Power_Control>');
+    return this._sendXMLToReceiver(command);
 };
 
 /**
@@ -346,8 +474,8 @@ Yamaha.prototype.isPartyModeEnabled = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.getSystemConfig = function () {
-    var command = this.createCommand('GET', 'System', '<Config>GetParam</Config>');
-    return this.SendXMLToReceiver(command);
+    var command = this._createCommand('GET', 'System', '<Config>GetParam</Config>');
+    return this._sendXMLToReceiver(command);
 };
 
 
@@ -377,11 +505,46 @@ Yamaha.prototype.getAvailableInputs = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.selectItem = function (input, number) {
-    var command = this.createCommand('PUT', input, '<List_Control><Direct_Sel>Line_' + number + '</Direct_Sel></List_Control>');
-    return this.SendXMLToReceiver(command);
+    var command = this._createCommand('PUT', input, '<List_Control><Direct_Sel>Line_' + number + '</Direct_Sel></List_Control>');
+    return this._sendXMLToReceiver(command);
 };
 
-//----------LIST METHODS----------
+//----------SOUND SETTINGS BEGIN----------
+
+Yamaha.prototype.getSurroundMode = function () {
+    //TODO: add method body here
+};
+
+Yamaha.prototype.setSurroundMode = function (mode) {
+    var command = this._createActiveZoneCommand('PUT', '<Surr><Pgm_Sel>' + mode + '</Pgm_Sel></Surr>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.setScene = function (sceneNumber) {
+    var command = this._createActiveZoneCommand('PUT', '<Scene><Scene_Sel>Scene ' + sceneNumber + '</Scene_Sel></Scene>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.setBassLevel = function (bassLevel) {
+    var command = this._createActiveZoneCommand('PUT', '<Sound_Video><Tone><Bass><Val>' + bassLevel + '</Val><Exp>1</Exp><Unit>dB</Unit></Bass></Tone></Sound_Video>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.setTrebleLevel = function (trebleLevel) {
+    var command = this._createActiveZoneCommand('PUT', '<Sound_Video><Tone><Treble><Val>' + trebleLevel + '</Val><Exp>1</Exp><Unit>dB</Unit></Treble></Tone></Sound_Video>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.setEnhancer = function (enhancerState) {
+    var command = this._createActiveZoneCommand('PUT', '<Surround><Program_Sel><Current><Enhancer>' + this._getOnOffCaption(enhancerState) + '</Enhancer></Current></Program_Sel></Surround>');
+    return this._sendXMLToReceiver(command);
+};
+
+//----------SOUND SETTINGS END---------
+
+//----------LIST METHODS BEGIN----------
+
+Yamaha.prototype.list = {};
 
 /**
  * Get the list of items for one of the inputs. AFAIK, it's applicable only to WEB_RADIO and USB inputs
@@ -389,12 +552,12 @@ Yamaha.prototype.selectItem = function (input, number) {
  * @param input - input name
  * @returns {Promise}
  */
-Yamaha.prototype.getList = function (input) {
+Yamaha.prototype.list.get = function (input) {
     var _self = this,
-        command = this.createCommand('GET', input, '<List_Info>GetParam</List_Info>');
-    return this.SendXMLToReceiver(command).then(function (listInfo) {
+        command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
+    return this._sendXMLToReceiver(command).then(function (listInfo) {
         _self.currentList = listInfo.YAMAHA_AV[0].List_Info[0];
-        return _self.when("listIsReady", input, true).then(function () {
+        return _self._when("listIsReady", input, true).then(function () {
             return _self.currentList;
         });
     });
@@ -404,7 +567,7 @@ Yamaha.prototype.getList = function (input) {
  * Checks if the current list has selectable items
  * @returns {boolean}
  */
-Yamaha.prototype.listHasSelectableItems = function () {
+Yamaha.prototype.list.hasSelectableItems = function () {
     return this.currentList.Current_List[0].Line_1[0].Attribute[0]._text !== "Unselectable";
 };
 
@@ -412,7 +575,7 @@ Yamaha.prototype.listHasSelectableItems = function () {
  * Checks if the list item is a folder, so we will get another list if this item will be selected
  * @returns {boolean}
  */
-Yamaha.prototype.listItemIsFolder = function (list, itemNumber) {
+Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
     return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Container"
 };
 
@@ -420,7 +583,7 @@ Yamaha.prototype.listItemIsFolder = function (list, itemNumber) {
  * Checks if the list item is a folder, so it will be played when selected
  * @returns {boolean}
  */
-Yamaha.prototype.listItemIsItem = function (list, itemNumber) {
+Yamaha.prototype.list.itemIsItem = function (list, itemNumber) {
     return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Item"
 };
 
@@ -428,7 +591,7 @@ Yamaha.prototype.listItemIsItem = function (list, itemNumber) {
  * Checks if the list state is "Ready"
  * @returns {boolean}
  */
-Yamaha.prototype.listIsReady = function (list) {
+Yamaha.prototype.list.isReady = function (list) {
     if (!list) {
         list = this.currentList;
     }
@@ -437,21 +600,60 @@ Yamaha.prototype.listIsReady = function (list) {
 
 /**
  * Gets the depth of the current menu layer
- * @returns {boolean}
+ * @returns {String}
  */
-Yamaha.prototype.listGetMenuLayer = function () {
+Yamaha.prototype.list.getMenuLayer = function () {
     return parseInt(this.currentList.Menu_Layer[0]._text);
 };
 
 /**
  * Gets the current menu name
- * @returns {*}
+ * @returns {String}
  */
-Yamaha.prototype.listGetMenuName = function () {
+Yamaha.prototype.list.getMenuName = function () {
     return this.currentList.Menu_Name[0]._text;
 };
 
 //----------LIST METHODS END----------
+
+//----------TUNER METHODS BEGIN----------
+
+Yamaha.prototype.tuner = {};
+
+Yamaha.prototype.tuner._sanitizeMode = function (mode) {
+    if (mode !== 'AM' && mode !== 'FM') {
+        mode = 'FM';
+    }
+    return mode;
+};
+
+Yamaha.prototype.tuner.setMode = function (mode) {
+    mode = this.tuner._sanitizeMode(mode);
+    var command = this._createActiveZoneCommand('PUT', '<Tuner><Play_Control><Tuning><Band>' + mode + '</Band></Tuning></Play_Control></Tuner>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.tuner.selectPrevPreset = function () {
+    var command = this._createActiveZoneCommand('PUT', '<Tuner><Play_Control><Preset><Preset_Sel>Up</Preset_Sel></Preset></Play_Control></Tuner>');
+    return this._sendXMLToReceiver(command);
+};
+
+Yamaha.prototype.tuner.selectNextPreset = function () {
+    var command = this._createActiveZoneCommand('PUT', '<Tuner><Play_Control><Preset><Preset_Sel>Up</Preset_Sel></Preset></Play_Control></Tuner>');
+    return this._sendXMLToReceiver(command);
+};
+
+
+Yamaha.prototype.tuner.setFrequency = function (mode, frequency) {
+    mode = this.tuner._sanitizeMode(mode);
+    if (mode === 'FM') {
+        frequency = frequency * 100;
+    }
+    var command = this._createActiveZoneCommand('PUT', '<Tuner><Play_Control><Tuning><Freq><' + mode + '><Val>' + frequency + '</Val></' + mode + '></Freq></Tuning></Play_Control></Tuner>');
+    return this._sendXMLToReceiver(command);
+};
+
+//----------TUNER METHODS END------------
 
 
 /**
