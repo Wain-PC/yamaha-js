@@ -154,7 +154,7 @@ Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
                         }, _self.responseDelay);
                     }
                     else {
-                        resolve(this.responseText);
+                        resolve(xmlToJSON.parseString(responseText));
                     }
                 }
                 else {
@@ -242,7 +242,7 @@ Yamaha.prototype.switchPower = function (zone, powerOn) {
     var self = this,
         powerStatus = 'Standby';
 
-    if (powerOn === false) {
+    if (powerOn === true) {
         powerStatus = 'On';
     }
 
@@ -315,7 +315,7 @@ Yamaha.prototype.powerOffAll = function () {
  * @param to {Number} change volume of the active zone to value (generally from -800 (min - -80.0 db) to 165 (+16.5 db))
  * @returns {Promise}
  */
-Yamaha.prototype.setVolumeTo = function (to) {
+Yamaha.prototype.setVolume = function (to) {
     var command = this._createActiveZoneCommand('PUT', '<Volume><Lvl><Val>' + to + '</Val><Exp>1</Exp><Unit>dB</Unit></Lvl></Volume>');
     return this._sendXMLToReceiver(command);
 };
@@ -356,7 +356,7 @@ Yamaha.prototype.adjustVolumeBy = function (by) {
     }
 
     return this.getBasicInfo().then(function (basicInfo) {
-        return self.setVolumeTo(basicInfo.getVolume() + by);
+        return self.setVolume(basicInfo.getVolume() + by);
     });
 };
 
@@ -382,7 +382,7 @@ Yamaha.prototype.setInputTo = function (to) {
  */
 Yamaha.prototype.getBasicInfo = function () {
     var _self = this,
-        command = this._createZoneCommand('GET', '<Basic_Status>GetParam</Basic_Status>');
+        command = this._createActiveZoneCommand('GET', '<Basic_Status>GetParam</Basic_Status>');
     return this._sendXMLToReceiver(command).then(function (basicInfo) {
         return basicInfo.YAMAHA_AV[0][_self.activeZoneName()][0].Basic_Status[0];
     });
@@ -419,7 +419,7 @@ Yamaha.prototype.setSleepTimer = function (sleepTimer) {
  */
 Yamaha.prototype.isMuted = function () {
     return this.getBasicInfo().then(function (basicStatus) {
-        return parseInt(basicStatus.Volume[0].Mute[0]._text !== "Off");
+        return basicStatus.Volume[0].Mute[0]._text !== "Off";
     })
 };
 
@@ -429,7 +429,7 @@ Yamaha.prototype.isMuted = function () {
  */
 Yamaha.prototype.isOn = function () {
     return this.getBasicInfo().then(function (basicStatus) {
-        return parseInt(basicStatus.Power_Control[0].Power[0]._text === "On");
+        return basicStatus.Power_Control[0].Power[0]._text === "On";
     })
 };
 
@@ -439,7 +439,7 @@ Yamaha.prototype.isOn = function () {
  */
 Yamaha.prototype.getCurrentInput = function () {
     return this.getBasicInfo().then(function (basicStatus) {
-        return parseInt(basicStatus.Input[0].Input_Sel[0]._text);
+        return basicStatus.Input[0].Input_Sel[0]._text;
     });
 };
 
@@ -449,7 +449,7 @@ Yamaha.prototype.getCurrentInput = function () {
  */
 Yamaha.prototype.isPureDirectEnabled = function () {
     return this.getBasicInfo().then(function (basicStatus) {
-        return parseInt(basicStatus.Sound_Video[0].Pure_Direct[0].Mode[0]._text === "On");
+        return basicStatus.Sound_Video[0].Pure_Direct[0].Mode[0]._text === "On";
     });
 };
 
@@ -485,12 +485,12 @@ Yamaha.prototype.getSystemConfig = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.getAvailableInputs = function () {
-    this.getSystemConfig().then(function (systemConfig) {
+    return this.getSystemConfig().then(function (systemConfig) {
         var inputs = [],
-            inputsXML = systemConfig.YAMAHA_AV.System[0].Config[0].Name[0].Input[0];
+            inputsXML = systemConfig.YAMAHA_AV[0].System[0].Config[0].Name[0].Input[0];
         for (var prop in inputsXML) {
             if (inputsXML.hasOwnProperty(prop)) {
-                inputs.push(inputsXML[prop][0]);
+                inputs.push(inputsXML[prop][0]._text);
             }
         }
         return inputs;
