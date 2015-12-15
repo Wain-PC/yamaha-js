@@ -18,6 +18,7 @@ function Yamaha(options) {
     this.zones = 2;
     this.activeZone = 1;
     this.responseDelay = 0;
+    this.currentList = null;
 
     for (var param in options) {
         if (options.hasOwnProperty(param) && (this.hasOwnProperty(param))) {
@@ -30,8 +31,8 @@ function Yamaha(options) {
 /*----------Service methods----------*/
 
 Yamaha.prototype.getZoneName = function (zoneNumber) {
-    if(zoneNumber > 1) {
-        return 'Zone_'+zoneNumber;
+    if (zoneNumber > 1) {
+        return 'Zone_' + zoneNumber;
     }
     return 'Main_Zone';
 };
@@ -41,7 +42,7 @@ Yamaha.prototype.activeZoneName = function () {
 };
 
 Yamaha.prototype.createCommand = function (type, container, command) {
-    return '<YAMAHA_AV cmd="'+type+'"><' + container + '>' + command + '</' + container + '></YAMAHA_AV>';
+    return '<YAMAHA_AV cmd="' + type + '"><' + container + '>' + command + '</' + container + '></YAMAHA_AV>';
 };
 
 Yamaha.prototype.createZoneCommand = function (type, zone, command) {
@@ -63,7 +64,7 @@ Yamaha.prototype.SendXMLToReceiver = function (bodyText) {
             if (this.readyState == 4) {
                 if (this.status == 200) {
                     var responseText = this.responseText;
-                    if(isPutCommand && _self.responseDelay) {
+                    if (isPutCommand && _self.responseDelay) {
                         setTimeout(function () {
                             resolve(xmlToJSON.parseString(responseText));
                         }, _self.responseDelay);
@@ -80,7 +81,7 @@ Yamaha.prototype.SendXMLToReceiver = function (bodyText) {
             }
         };
 
-        request.onerror = function() {
+        request.onerror = function () {
             reject(new Error("Network Error"));
         };
 
@@ -128,11 +129,11 @@ Yamaha.prototype.switchPower = function (zone, powerOn) {
     var self = this,
         powerStatus = 'Standby';
 
-    if(powerOn === false) {
+    if (powerOn === false) {
         powerStatus = 'On';
     }
 
-    if(!zone) {
+    if (!zone) {
         zone = this.activeZone;
     }
     //the receiver needs to be powered on
@@ -140,17 +141,17 @@ Yamaha.prototype.switchPower = function (zone, powerOn) {
     return this.isOn(zone).then(function (isOn) {
         //if the receiver is on while we're trying to turn it on, or
         //if the receiver is off while we're trying to turn it off
-        if((isOn && powerOn) || (!isOn && !powerOn)) {
+        if ((isOn && powerOn) || (!isOn && !powerOn)) {
             return isOn;
         }
-        var command = self.createZoneCommand('PUT', zone, '<Power_Control><Power>'+ powerStatus +'</Power></Power_Control>');
+        var command = self.createZoneCommand('PUT', zone, '<Power_Control><Power>' + powerStatus + '</Power></Power_Control>');
         return self.SendXMLToReceiver(command);
     });
 };
 
 /**
  * Power on some receiver zone
- * @param zone {Boolean} - # of zone to turn on
+ * @param zone {Number} - # of zone to turn on
  * @returns {Promise}
  */
 Yamaha.prototype.powerOn = function (zone) {
@@ -159,7 +160,7 @@ Yamaha.prototype.powerOn = function (zone) {
 
 /**
  * Power off some receiver zone
- * @param zone {Boolean} - # of zone to turn on
+ * @param zone {Number} - # of zone to turn on
  * @returns {Promise}
  */
 Yamaha.prototype.powerOff = function (zone) {
@@ -175,7 +176,7 @@ Yamaha.prototype.powerOnAll = function () {
         i, promise;
     //loop through all zones and power them on (one by one, NOT simultaneously)
     promise = this.powerOn(1);
-    for(i=2;i<=this.zones;i++) {
+    for (i = 2; i <= this.zones; i++) {
         promise = promise.then(this.powerOn(i));
     }
     return promise;
@@ -190,7 +191,7 @@ Yamaha.prototype.powerOffAll = function () {
         i, promise;
     //loop through all zones and power them on (one by one, NOT simultaneously)
     promise = this.powerOff(1);
-    for(i=2;i<=this.zones;i++) {
+    for (i = 2; i <= this.zones; i++) {
         promise = promise.then(this.powerOff(i));
     }
     return promise;
@@ -237,13 +238,19 @@ Yamaha.prototype.adjustVolumeBy = function (by) {
         by = parseInt(by);
     }
     //return instantly resolved promise for chaining if the delta is zero or NaN (or any other bad value)
-    if(!by || !by instanceof Number) {
+    if (!by || !by instanceof Number) {
         return new Promise().resolve();
     }
 
     return this.getBasicInfo().then(function (basicInfo) {
         return self.setVolumeTo(basicInfo.getVolume() + by);
     });
+};
+
+Yamaha.prototype.setZone = function (zone) {
+    //TODO: add check whether the zone number is being supported by the given receiver
+    this.activeZone = zone;
+    return Promise.resolve(zone);
 };
 
 /**
@@ -352,9 +359,9 @@ Yamaha.prototype.getSystemConfig = function () {
 Yamaha.prototype.getAvailableInputs = function () {
     this.getSystemConfig().then(function (systemConfig) {
         var inputs = [],
-        inputsXML = systemConfig.YAMAHA_AV.System[0].Config[0].Name[0].Input[0];
+            inputsXML = systemConfig.YAMAHA_AV.System[0].Config[0].Name[0].Input[0];
         for (var prop in inputsXML) {
-            if(inputsXML.hasOwnProperty(prop)) {
+            if (inputsXML.hasOwnProperty(prop)) {
                 inputs.push(inputsXML[prop][0]);
             }
         }
@@ -374,123 +381,108 @@ Yamaha.prototype.selectItem = function (input, number) {
     return this.SendXMLToReceiver(command);
 };
 
+//----------LIST METHODS----------
+
 /**
- * Get the list of items for one of the inputs
+ * Get the list of items for one of the inputs. AFAIK, it's applicable only to WEB_RADIO and USB inputs
+ * The list will wait for ready status before returning the result
  * @param input - input name
  * @returns {Promise}
  */
 Yamaha.prototype.getList = function (input) {
-    var command = this.createCommand('GET', input, '<List_Info>GetParam</List_Info>');
-    return this.SendXMLToReceiver(command).then(function (result) {
-        return enrichListInfo(result, input);
+    var _self = this,
+        command = this.createCommand('GET', input, '<List_Info>GetParam</List_Info>');
+    return this.SendXMLToReceiver(command).then(function (listInfo) {
+        _self.currentList = listInfo.YAMAHA_AV[0].List_Info[0];
+        return _self.when("listIsReady", input, true).then(function () {
+            return _self.currentList;
+        });
     });
 };
 
-function enrichListInfo(listInfo, listname) {
-    //I assume YAMAHA_AV can be either object or array (depending on the receiver model)
-    //let's check it out and act accordingly
-    var yamahaAv;
-    if(listInfo.YAMAHA_AV instanceof Array) {
-        yamahaAv = listInfo.YAMAHA_AV[0];
+/**
+ * Checks if the current list has selectable items
+ * @returns {boolean}
+ */
+Yamaha.prototype.listHasSelectableItems = function () {
+    return this.currentList.Current_List[0].Line_1[0].Attribute[0]._text !== "Unselectable";
+};
+
+/**
+ * Checks if the list item is a folder, so we will get another list if this item will be selected
+ * @returns {boolean}
+ */
+Yamaha.prototype.listItemIsFolder = function (list, itemNumber) {
+    return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Container"
+};
+
+/**
+ * Checks if the list item is a folder, so it will be played when selected
+ * @returns {boolean}
+ */
+Yamaha.prototype.listItemIsItem = function (list, itemNumber) {
+    return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Item"
+};
+
+/**
+ * Checks if the list state is "Ready"
+ * @returns {boolean}
+ */
+Yamaha.prototype.listIsReady = function (list) {
+    if (!list) {
+        list = this.currentList;
     }
-    else {
-        yamahaAv = listInfo.YAMAHA_AV;
-    }
-
-
-    listInfo.hasSelectableItems = function () {
-        return yamahaAv[listname][0].List_Info[0].Current_List[0].Line_1[0].Attribute[0]._text !== "Unselectable";
-    };
-
-    listInfo.isFolder = function (itemNumber) {
-        if(!itemNumber) {
-            itemNumber = 1;
-        }
-        return yamahaAv[listname][0].List_Info[0].Current_List[0]['Line_'+itemNumber][0].Attribute[0]._text === "Container";
-    };
-
-    listInfo.isItem = function (itemNumber) {
-        if(!itemNumber) {
-            itemNumber = 1;
-        }
-        return yamahaAv[listname][0].List_Info[0].Current_List[0]['Line_'+itemNumber][0].Attribute[0]._text === "Item";
-    };
-
-    listInfo.isReady = function () {
-        return !listInfo.isBusy() && listInfo.hasSelectableItems();
-    };
-
-    listInfo.isBusy = function () {
-        return yamahaAv[listname][0].List_Info[0].Menu_Status[0]._text === "Busy";
-    };
-
-    listInfo.getMenuLayer = function () {
-        return yamahaAv[listname][0].List_Info[0].Menu_Layer[0]._text;
-    };
-
-    listInfo.getMenuName = function () {
-        return yamahaAv[listname][0].List_Info[0].Menu_Name[0]._text;
-    };
-
-    listInfo.getList = function () {
-        return yamahaAv[listname][0].List_Info[0];
-    };
-    return listInfo;
-}
-
-
-Yamaha.prototype.isMenuReady = function (name) {
-    return this.getList(name).then(function (result) {
-        return result.isReady();
-    });
+    return this.currentList.Menu_Status[0]._text === "Ready";
 };
 
-Yamaha.prototype.whenMenuReady = function (name) {
-    var self = this;
-    return self.when("isMenuReady", name, true);
+/**
+ * Gets the depth of the current menu layer
+ * @returns {boolean}
+ */
+Yamaha.prototype.listGetMenuLayer = function () {
+    return parseInt(this.currentList.Menu_Layer[0]._text);
 };
 
-Yamaha.prototype.selectUSBListItem = function (number) {
-    return this.selectItem("USB", number);
+/**
+ * Gets the current menu name
+ * @returns {*}
+ */
+Yamaha.prototype.listGetMenuName = function () {
+    return this.currentList.Menu_Name[0]._text;
 };
 
-Yamaha.prototype.selectWebRadioListItem = function (number) {
-    var _self = this;
-    return this.selectItem("NET_RADIO", number).then(function(result) {
-        return _self.getWebRadioList();
-    });
-};
+//----------LIST METHODS END----------
 
-Yamaha.prototype.selectFirstPlayableWebRadioListItem = function() {
-    var onListReceived = function (list) {
-        var _self = this;
-        if(list.hasSelectableItems()) {
-            if(list.isItem(1)) {
-                this.selectWebRadioListItem(1);
-            }
-            else {
-                return this.selectFirstPlayableWebRadioListItem();
-            }
-        }
-        else {
-            return false;
-        }
-    }.bind(this);
 
-    return this.selectWebRadioListItem(1).then(onListReceived);
-};
-
-Yamaha.prototype.getWebRadioList = function () {
-    return this.getList("NET_RADIO");
-};
-Yamaha.prototype.getUSBList = function () {
-    return this.getList("USB");
-};
-
-//-----------chained commands-------------
-
-//Turns the receiver on and selects the first radio on the list (if any)
-Yamaha.prototype.switchToFavoriteNumber = function(number){
-    return this.setMainInputTo("NET RADIO")
-        .then(this.selectFirstPlayableWebRadioListItem());
+/**
+ * Turns the receiver on and selects the radio on the favorite list (if any)
+ * @param stationNumber - number of the radio station on the list
+ * @returns {Promise}
+ */
+Yamaha.prototype.playWebRadioInZone2 = function (stationNumber) {
+    var _self = this,
+        inputName = 'NET RADIO';
+    //chain the commands in the following order
+    //1. turn the receiver zone 2 ON
+    return this.powerOn(2)
+        //then set the input to net radio
+        .then(function () {
+            return _self.setInputTo(inputName);
+        })
+        //then get the list
+        .then(function () {
+            return _self.getList(inputName)
+        })
+        //then select the first item (it would be Bookmarks)
+        .then(function () {
+            return _self.selectItem(inputName, 1);
+        })
+        //then select the first item again (this would be the genre, e.g. Rock)
+        .then(function () {
+            return _self.selectItem(inputName, 1);
+        })
+        //and finally select the desired station from the list
+        .then(function () {
+            return _self.selectItem(inputName, stationNumber);
+        })
 };
