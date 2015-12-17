@@ -26,6 +26,17 @@ function Yamaha(options) {
         }
     }
 
+    for(var method in this.list) {
+        if(this.list.hasOwnProperty(method)) {
+            this.list[method] = this.list[method].bind(this);
+        }
+    }
+    for(method in this.tuner) {
+        if(this.tuner.hasOwnProperty(method)) {
+            this.tuner[method] = this.tuner[method].bind(this);
+        }
+    }
+
     //here go the codes for each button on the remote. I hope they're model independent
     //one can use them as this.codes[zoneNumber][codeName]
     this.codes = {
@@ -176,25 +187,26 @@ Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
 
 /**
  * long polling of any request made to the receiver
- * @param YamahaCall - the metod name to be called
+ * @param callType - the method type (prefix) to be called
+ * @param methodName - the metod name to be called
  * @param parameter - argument to pass to the above method
  * @param expectedReturnValue - stop polling when this value meets our requirements
  * @private
  * @returns {Promise}
  */
-Yamaha.prototype._when = function (YamahaCall, parameter, expectedReturnValue) {
+Yamaha.prototype._when = function (callType, methodName, parameter, expectedReturnValue) {
     var self = this;
+    console.log(this);
     return new Promise(function (resolve, reject) {
         var tries = 0;
         var interval = setInterval(function () {
-            self[YamahaCall](parameter).then(function (result) {
-                if (result == expectedReturnValue) {
-                    clearInterval(interval);
-                    resolve();
-                }
-                tries++;
-                if (tries > 40) reject("Timeout");
-            });
+            result = self[callType][methodName](parameter);
+            if (result == expectedReturnValue) {
+                clearInterval(interval);
+                resolve();
+            }
+            tries++;
+            if (tries > 40) reject("Timeout");
 
         }, 500);
     });
@@ -356,11 +368,11 @@ Yamaha.prototype.adjustVolumeBy = function (by) {
     }
 
     return this.getBasicInfo().then(function (basicInfo) {
-        return self.setVolume(basicInfo.getVolume() + by);
+        return self.setVolume(self._getVolume(basicInfo) + by);
     });
 };
 
-Yamaha.prototype.setZone = function (zone) {
+Yamaha.prototype.setActiveZone = function (zone) {
     //TODO: add check whether the zone number is being supported by the given receiver
     this.activeZone = zone;
     return Promise.resolve(zone);
@@ -380,22 +392,24 @@ Yamaha.prototype.setInputTo = function (to) {
  * Gets the basic info about the currenly active zone
  * @returns {Promise}
  */
-Yamaha.prototype.getBasicInfo = function () {
+Yamaha.prototype.getBasicInfo = function (prettyJson) {
     var _self = this,
         command = this._createActiveZoneCommand('GET', '<Basic_Status>GetParam</Basic_Status>');
     return this._sendXMLToReceiver(command).then(function (basicInfo) {
-        return basicInfo.YAMAHA_AV[0][_self.activeZoneName()][0].Basic_Status[0];
+        var info = basicInfo.YAMAHA_AV[0][_self.activeZoneName()][0].Basic_Status[0];
+        console.log(info);
+        if(prettyJson) {
+            return {
+                isOn: _self._isOn(info),
+                currentVolume: _self._getVolume(info),
+                isMuted: _self._isMuted(info),
+                currentInput: _self._getCurrentInput(info),
+                pureDirect: _self._isPureDirectEnabled(info),
+                partyMode: _self._isPartyModeEnabled(info)
+            }
+        }
+        return info;
     });
-};
-
-/**
- * Gets the volume level (from -800 to 165)
- * @returns {Promise}
- */
-Yamaha.prototype.getVolume = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        return parseInt(basicStatus.Volume[0].Lvl[0].Val[0]._text);
-    })
 };
 
 /**
@@ -413,34 +427,55 @@ Yamaha.prototype.setSleepTimer = function (sleepTimer) {
     return this._sendXMLToReceiver(command);
 };
 
+
+Yamaha.prototype._getVolume = function (basicStatus) {
+    return parseInt(basicStatus.Volume[0].Lvl[0].Val[0]._text); 
+};
+/**
+ * Gets the volume level (from -800 to 165)
+ * @returns {Promise}
+ */
+Yamaha.prototype.getVolume = function () {
+    return this.getBasicInfo().then(this._getVolume);
+};
+
+
+Yamaha.prototype._isMuted = function (basicStatus) {
+    return basicStatus.Volume[0].Mute[0]._text !== "Off";
+};
 /**
  * Gets the mute state (boolean)
  * @returns {Promise}
  */
 Yamaha.prototype.isMuted = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        return basicStatus.Volume[0].Mute[0]._text !== "Off";
-    })
+    return this.getBasicInfo().then(this._isMuted);
 };
 
+Yamaha.prototype._isOn = function (basicStatus) {
+    return basicStatus.Power_Control[0].Power[0]._text === "On";
+};
 /**
  * Gets the zone state (boolean)
  * @returns {Promise}
  */
 Yamaha.prototype.isOn = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        return basicStatus.Power_Control[0].Power[0]._text === "On";
-    })
+    return this.getBasicInfo().then(this._isOn);
 };
 
+Yamaha.prototype._getCurrentInput = function (basicStatus) {
+    return basicStatus.Input[0].Input_Sel[0]._text;
+};
 /**
  * Gets current input name (string)
  * @returns {Promise}
  */
 Yamaha.prototype.getCurrentInput = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        return basicStatus.Input[0].Input_Sel[0]._text;
-    });
+    return this.getBasicInfo().then(this._getCurrentInput);
+};
+
+Yamaha.prototype._isPureDirectEnabled = function (basicStatus) {
+    if(this.activeZone !== 1) return false;
+    return basicStatus.Sound_Video[0].Pure_Direct[0].Mode[0]._text === "On";
 };
 
 /**
@@ -448,9 +483,17 @@ Yamaha.prototype.getCurrentInput = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.isPureDirectEnabled = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        return basicStatus.Sound_Video[0].Pure_Direct[0].Mode[0]._text === "On";
-    });
+    return this.getBasicInfo().then(this._isPureDirectEnabled);
+};
+
+Yamaha.prototype._isPartyModeEnabled = function (basicStatus) {
+    try {
+        return basicStatus.Party_Info[0]._text === "On";
+    }
+        //this means getting the property of undefined, so the party mode is not supported by the receiver
+    catch (err) {
+        return false;
+    }
 };
 
 /**
@@ -458,26 +501,42 @@ Yamaha.prototype.isPureDirectEnabled = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.isPartyModeEnabled = function () {
-    return this.getBasicInfo().then(function (basicStatus) {
-        try {
-            return basicStatus.Party_Info[0]._text === "On";
-        }
-            //this means getting the property of undefined, so the party mode is not supported by the receiver
-        catch (err) {
-            return false;
-        }
-    });
+    return this.getBasicInfo().then(this._isPartyModeEnabled());
 };
 
 /**
  * Get common system info (Object)
  * @returns {Promise}
  */
-Yamaha.prototype.getSystemConfig = function () {
-    var command = this._createCommand('GET', 'System', '<Config>GetParam</Config>');
-    return this._sendXMLToReceiver(command);
+Yamaha.prototype.getSystemConfig = function (prettyJson) {
+    var command = this._createCommand('GET', 'System', '<Config>GetParam</Config>'),
+        _self = this;
+    return this._sendXMLToReceiver(command).then(function (systemConfig) {
+        systemConfig = systemConfig.YAMAHA_AV[0].System[0].Config[0];
+        if(prettyJson) {
+            return {
+                availableInputs: _self._getAvailableInputs(systemConfig),
+                availableZones: _self._getAvailableZones(systemConfig),
+                modelName: systemConfig.Model_Name[0]._text,
+                systemId: systemConfig.System_ID[0]._text,
+                version: systemConfig.Version[0]._text
+            }
+
+        }
+        return systemConfig;
+    });
 };
 
+Yamaha.prototype._getAvailableInputs = function (systemConfig) {
+    var inputs = [],
+        inputsXML = systemConfig.Name[0].Input[0];
+    for (var prop in inputsXML) {
+        if (inputsXML.hasOwnProperty(prop)) {
+            inputs.push(inputsXML[prop][0]._text);
+        }
+    }
+    return inputs;
+};
 
 /**
  * Get all available inputs for this receiver.
@@ -485,16 +544,28 @@ Yamaha.prototype.getSystemConfig = function () {
  * @returns {Promise}
  */
 Yamaha.prototype.getAvailableInputs = function () {
-    return this.getSystemConfig().then(function (systemConfig) {
-        var inputs = [],
-            inputsXML = systemConfig.YAMAHA_AV[0].System[0].Config[0].Name[0].Input[0];
-        for (var prop in inputsXML) {
-            if (inputsXML.hasOwnProperty(prop)) {
-                inputs.push(inputsXML[prop][0]._text);
-            }
+    return this.getSystemConfig().then(this._getAvailableInputs);
+};
+
+
+
+Yamaha.prototype._getAvailableZones = function (systemConfig) {
+    var inputs = [],
+        features = systemConfig.Feature_Existence[0];
+    for (var feature in features) {
+        if (features.hasOwnProperty(feature) && features[feature][0]._text === 1) {
+            inputs.push(feature);
         }
-        return inputs;
-    });
+    }
+    return inputs;
+};
+
+/**
+ * Get all available zones(and features) for this receiver.
+ * @returns {Promise}
+ */
+Yamaha.prototype.getAvailableZones = function () {
+    return this.getSystemConfig().then(this._getAvailableZones);
 };
 
 /**
@@ -556,8 +627,8 @@ Yamaha.prototype.list.get = function (input) {
     var _self = this,
         command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
     return this._sendXMLToReceiver(command).then(function (listInfo) {
-        _self.currentList = listInfo.YAMAHA_AV[0].List_Info[0];
-        return _self._when("listIsReady", input, true).then(function () {
+        _self.currentList = listInfo.YAMAHA_AV[0][input][0].List_Info[0];
+        return _self._when("list","isReady", input, true).then(function () {
             return _self.currentList;
         });
     });
