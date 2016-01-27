@@ -22,6 +22,12 @@ function Yamaha(options) {
         }
     }
 
+    for (method in this.__proto__) {
+        if (this.__proto__.hasOwnProperty(method) && typeof this.__proto__[method] === 'function') {
+            this[method] = this[method].bind(this);
+        }
+    }
+
     for (var method in this.list) {
         if (this.list.hasOwnProperty(method)) {
             this.list[method] = this.list[method].bind(this);
@@ -182,19 +188,18 @@ Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
  */
 Yamaha.prototype._when = function (callType, methodName, parameter, expectedReturnValue) {
     var self = this;
-    console.log(this);
     return new Promise(function (resolve, reject) {
-        var tries = 0;
-        var interval = setInterval(function () {
-            result = self[callType][methodName](parameter);
-            if (result == expectedReturnValue) {
-                clearInterval(interval);
-                resolve();
-            }
-            tries++;
-            if (tries > 40) reject("Timeout");
+        var tries = 0,
+            interval = setInterval(function () {
+                var result = self[callType][methodName](parameter);
+                if (result == expectedReturnValue) {
+                    clearInterval(interval);
+                    resolve();
+                }
+                tries++;
+                if (tries > 40) reject("Timeout");
 
-        }, 500);
+            }, 500);
     });
 };
 /**
@@ -227,29 +232,29 @@ Yamaha.prototype._sendCode = function (zone, commandType, commandName) {
 };
 
 Yamaha.prototype._traverse = function (xmlObject, traverseArray, getTextNode) {
-    var i=0, length = traverseArray.length,
+    var i = 0, length = traverseArray.length,
         result = JSON.parse(JSON.stringify(xmlObject));
 
     //walk through YAMAHA_AV if present
-    if(!result) debugger;
-    if(result['YAMAHA_AV'] && result['YAMAHA_AV'][0]) {
+    if (!result) debugger;
+    if (result['YAMAHA_AV'] && result['YAMAHA_AV'][0]) {
         result = result['YAMAHA_AV'][0];
     }
     try {
-        for(i;i<length;i++) {
+        for (i; i < length; i++) {
             result = result[traverseArray[i]][0];
-            if(result === undefined) {
+            if (result === undefined) {
                 return {};
             }
 
         }
 
-        if(getTextNode && result && result.hasOwnProperty('_text')) {
+        if (getTextNode && result && result.hasOwnProperty('_text')) {
             return result['_text'];
         }
         return result;
     }
-    catch(err) {
+    catch (err) {
         return null;
     }
 };
@@ -308,8 +313,7 @@ Yamaha.prototype.powerOff = function (zone) {
  * @returns {Promise}
  */
 Yamaha.prototype.powerOnAll = function () {
-    var self = this,
-        i, promise;
+    var i, promise;
     //loop through all zones and power them on (one by one, NOT simultaneously)
     promise = this.powerOn(1);
     for (i = 2; i <= this.zones; i++) {
@@ -335,39 +339,39 @@ Yamaha.prototype.powerOffAll = function () {
 
 /**
  *
+ * @param zone {String} Zone ID
  * @param to {Number} change volume of the active zone to value (generally from -800 (min - -80.0 db) to 165 (+16.5 db))
  * @returns {Promise}
  */
 Yamaha.prototype.setVolume = function (zone, to) {
-    var command = this._createZoneCommand('PUT', zone, '<Volume><Lvl><Val>' + to*10 + '</Val><Exp>1</Exp><Unit>dB</Unit></Lvl></Volume>');
-    console.log(command);
+    var command = this._createZoneCommand('PUT', zone, '<Volume><Lvl><Val>' + to * 10 + '</Val><Exp>1</Exp><Unit>dB</Unit></Lvl></Volume>');
     return this._sendXMLToReceiver(command);
 };
 
 /**
- *
+ * @param zone {String} Zone ID
  * @param by {Number} increase volume of the active zone by the given value (this value will be summed to the current volume)
  * @returns {Promise}
  */
-Yamaha.prototype.volumeUp = function (by) {
-    return this.adjustVolumeBy(by);
+Yamaha.prototype.volumeUp = function (zone,by) {
+    return this.adjustVolumeBy(zone,by);
 };
 
 /**
- *
+ * @param zone {String} Zone ID
  * @param by {Number} decrease volume of the active zone by the given value (this value will be deducted to the current volume)
  * @returns {Promise}
  */
-Yamaha.prototype.volumeDown = function (by) {
-    return this.adjustVolumeBy(-by);
+Yamaha.prototype.volumeDown = function (zone, by) {
+    return this.adjustVolumeBy(zone, -by);
 };
 
 /**
- *
+ * @param zone {String} Zone ID
  * @param by {Number} change volume of the active zone by the given value (this value, either positive or negative) will be summed to the current volume)
  * @returns {Promise}
  */
-Yamaha.prototype.adjustVolumeBy = function (by) {
+Yamaha.prototype.adjustVolumeBy = function (zone, by) {
     var self = this;
     //what we need to do here is get the basic info about the receiver, then change the volume by the given number
     //number can be either positive or negative
@@ -379,7 +383,7 @@ Yamaha.prototype.adjustVolumeBy = function (by) {
         return new Promise().resolve();
     }
 
-    return this.getBasicInfo().then(function (basicInfo) {
+    return this.getBasicInfo(zone).then(function (basicInfo) {
         return self.setVolume(self._getVolume(basicInfo) + by);
     });
 };
@@ -399,13 +403,11 @@ Yamaha.prototype.setInputTo = function (zone, to) {
  * Gets the basic info about the currenly active zone
  * @returns {Promise}
  */
-Yamaha.prototype.getBasicInfo = function (zone,prettyJson) {
+Yamaha.prototype.getBasicInfo = function (zone, prettyJson) {
     var _self = this,
         command = this._createZoneCommand('GET', zone, '<Basic_Status>GetParam</Basic_Status>');
-    console.log(zone);
     return this._sendXMLToReceiver(command).then(function (basicInfo) {
-        console.log(zone, command);
-        var info = _self._traverse(basicInfo, [zone,'Basic_Status']);
+        var info = _self._traverse(basicInfo, [zone, 'Basic_Status']);
         if (prettyJson) {
             return {
                 isOn: _self._isOn(info),
@@ -425,7 +427,7 @@ Yamaha.prototype.getBasicInfo = function (zone,prettyJson) {
  *
  * @param {String} zone Zone ID, e.g "Main_Zone" or "Zone_2"
  * @param {Boolean} muteState - if true, zone will be muted, else it'll be unmuted
- * @returns {Promise.<T>}
+ * @returns {Promise}
  */
 Yamaha.prototype.setMute = function (zone, muteState) {
     var command = this._createZoneCommand('PUT', zone, '<Volume><Mute>' + this._getOnOffCaption(muteState) + '</Mute></Volume>');
@@ -437,74 +439,74 @@ Yamaha.prototype.setSleep = function (zone, sleepTimer) {
     return this._sendXMLToReceiver(command);
 };
 
-Yamaha.prototype.getSleep = function () {
-    return this.getBasicInfo().then(this._getSleep.bind(this));
+Yamaha.prototype.getSleep = function (zone) {
+    return this.getBasicInfo(zone).then(this._getSleep);
 };
 Yamaha.prototype._getSleep = function (basicStatus) {
-    return this._traverse(basicStatus,['Power_Control','Sleep'],true);
+    return this._traverse(basicStatus, ['Power_Control', 'Sleep'], true);
 };
 
 
 Yamaha.prototype._getVolume = function (basicStatus) {
-    return this._traverse(basicStatus,['Volume','Lvl','Val'], true) /10;
+    return this._traverse(basicStatus, ['Volume', 'Lvl', 'Val'], true) / 10;
 };
 /**
  * Gets the volume level (from -800 to 165)
  * @returns {Promise}
  */
-Yamaha.prototype.getVolume = function () {
-    return this.getBasicInfo().then(this._getVolume);
+Yamaha.prototype.getVolume = function (zone) {
+    return this.getBasicInfo(zone).then(this._getVolume);
 };
 
 
 Yamaha.prototype._isMuted = function (basicStatus) {
-    return this._traverse(basicStatus,['Volume','Mute'], true) !== 'Off';
+    return this._traverse(basicStatus, ['Volume', 'Mute'], true) !== 'Off';
 };
 /**
  * Gets the mute state (boolean)
  * @returns {Promise}
  */
-Yamaha.prototype.isMuted = function () {
-    return this.getBasicInfo().then(this._isMuted);
+Yamaha.prototype.isMuted = function (zone) {
+    return this.getBasicInfo(zone).then(this._isMuted);
 };
 
 Yamaha.prototype._isOn = function (basicStatus) {
-    return this._traverse(basicStatus,['Power_Control','Power'], true) === 'On';
+    return this._traverse(basicStatus, ['Power_Control', 'Power'], true) === 'On';
 };
 /**
  * Gets the zone state (boolean)
  * @returns {Promise}
  */
-Yamaha.prototype.isOn = function () {
-    return this.getBasicInfo().then(this._isOn);
+Yamaha.prototype.isOn = function (zone) {
+    return this.getBasicInfo(zone).then(this._isOn);
 };
 
 Yamaha.prototype._getCurrentInput = function (basicStatus) {
-    return this._traverse(basicStatus,['Input','Input_Sel'], true);
+    return this._traverse(basicStatus, ['Input', 'Input_Sel'], true);
 };
 /**
  * Gets current input name (string)
  * @returns {Promise}
  */
-Yamaha.prototype.getCurrentInput = function () {
-    return this.getBasicInfo().then(this._getCurrentInput);
+Yamaha.prototype.getCurrentInput = function (zone) {
+    return this.getBasicInfo(zone).then(this._getCurrentInput);
 };
 
 Yamaha.prototype._isPureDirectEnabled = function (basicStatus) {
-    return this._traverse(basicStatus,['Sound_Video','Pure_Direct','Mode'], true) === 'On';
+    return this._traverse(basicStatus, ['Sound_Video', 'Pure_Direct', 'Mode'], true) === 'On';
 };
 
 /**
  * Gets pure direct state (boolean)
  * @returns {Promise}
  */
-Yamaha.prototype.isPureDirectEnabled = function () {
-    return this.getBasicInfo().then(this._isPureDirectEnabled);
+Yamaha.prototype.isPureDirectEnabled = function (zone) {
+    return this.getBasicInfo(zone).then(this._isPureDirectEnabled);
 };
 
 Yamaha.prototype._isPartyModeEnabled = function (basicStatus) {
     try {
-        return this._traverse(basicStatus,['Party_Info'], true) === 'On';
+        return this._traverse(basicStatus, ['Party_Info'], true) === 'On';
     }
         //this means getting the property of undefined, so the party mode is not supported by the receiver
     catch (err) {
@@ -516,8 +518,8 @@ Yamaha.prototype._isPartyModeEnabled = function (basicStatus) {
  * Gets party mode state (boolean)
  * @returns {Promise}
  */
-Yamaha.prototype.isPartyModeEnabled = function () {
-    return this.getBasicInfo().then(this._isPartyModeEnabled());
+Yamaha.prototype.isPartyModeEnabled = function (zone) {
+    return this.getBasicInfo(zone).then(this._isPartyModeEnabled());
 };
 
 /**
@@ -528,18 +530,18 @@ Yamaha.prototype.getSystemConfig = function (prettyJson) {
     var command = this._createCommand('GET', 'System', '<Config>GetParam</Config>'),
         _self = this;
     return this._sendXMLToReceiver(command).then(function (systemConfig) {
-        systemConfig = systemConfig.YAMAHA_AV[0].System[0].Config[0];
+        systemConfig = this._traverse(systemConfig,['System', 'Config']);
         if (prettyJson) {
             return {
                 availableInputs: _self._getAvailableInputs(systemConfig),
                 availableZones: _self._getAvailableZones(systemConfig),
-                modelName: systemConfig.Model_Name[0]._text,
-                systemId: systemConfig.System_ID[0]._text,
-                version: systemConfig.Version[0]._text
+                modelName: this._traverse(systemConfig,['Model_Name'], true),
+                systemId: this._traverse(systemConfig,['System_ID'], true),
+                version: this._traverse(systemConfig,['Version'], true)
             }
         }
         return systemConfig;
-    });
+    }.bind(this));
 };
 
 
@@ -563,12 +565,12 @@ Yamaha.prototype.getZoneConfig = function (zone, prettyJson) {
         sceneName,
         scenes;
     return this._sendXMLToReceiver(command).then(function (zoneConfig) {
-        zoneConfig = zoneConfig.YAMAHA_AV[0][zone][0].Config[0];
+        zoneConfig = this._traverse(zoneConfig,[zone, 'Config']);
         if (prettyJson) {
             retObj = {
-                isReady: zoneConfig.Feature_Availability[0]._text === 'Ready',
-                volumeExistence: zoneConfig.Volume_Existence[0]._text === 'Exists',
-                name: zoneConfig.Name[0].Zone[0]._text,
+                isReady: this._traverse(zoneConfig,['Feature_Availability'], true) === 'Ready',
+                volumeExistence: this._traverse(zoneConfig,['Volume_Existence'], true) === 'Exists',
+                name: this._traverse(zoneConfig,['Name', 'Zone'], true),
                 scenes: []
             };
 
@@ -584,12 +586,12 @@ Yamaha.prototype.getZoneConfig = function (zone, prettyJson) {
 
         }
         return zoneConfig;
-    });
+    }.bind(this));
 };
 
 Yamaha.prototype._getAvailableInputs = function (systemConfig) {
     var inputs = [],
-        inputsXML = systemConfig.Name[0].Input[0],
+        inputsXML = this._traverse(systemConfig,['Name', 'Input']),
         propertyName, input;
 
     //add all common inputs
@@ -597,16 +599,16 @@ Yamaha.prototype._getAvailableInputs = function (systemConfig) {
         if (inputsXML.hasOwnProperty(propertyName)) {
             inputs.push({
                 id: propertyName,
-                name: inputsXML[propertyName][0]._text
+                name: this._traverse(systemConfig,[propertyName], true)
             });
         }
     }
     //add special features (like Net Radio or AirPlay)
-    inputsXML = systemConfig.Feature_Existence[0];
+    inputsXML = this._traverse(systemConfig,['Feature_Existence']);
     for (propertyName in inputsXML) {
         if (inputsXML.hasOwnProperty(propertyName)) {
             //add all except zones
-            if (propertyName !== 'Main_Zone' && propertyName.indexOf('Zone_') !== 0 && inputsXML[propertyName][0]._text === 1) {
+            if (propertyName !== 'Main_Zone' && propertyName.indexOf('Zone_') !== 0 && this._traverse(inputsXML,[propertyName], true) === 1) {
                 inputs.push({
                     id: propertyName,
                     name: propertyName
@@ -630,9 +632,9 @@ Yamaha.prototype.getAvailableInputs = function () {
 
 Yamaha.prototype._getAvailableZones = function (systemConfig) {
     var inputs = [],
-        features = systemConfig.Feature_Existence[0];
+        features = this._traverse(systemConfig,['Feature_Existence']);
     for (var feature in features) {
-        if (features.hasOwnProperty(feature) && (feature === 'Main_Zone' || feature.indexOf('Zone_') === -0) && features[feature][0]._text === 1) {
+        if (features.hasOwnProperty(feature) && (feature === 'Main_Zone' || feature.indexOf('Zone_') === -0) && this._traverse(features,[feature], true) === 1) {
             inputs.push(feature);
         }
     }
@@ -711,7 +713,7 @@ Yamaha.prototype.list.get = function (input) {
     var _self = this,
         command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
     return this._sendXMLToReceiver(command).then(function (listInfo) {
-        _self.currentList = listInfo.YAMAHA_AV[0][input][0].List_Info[0];
+        _self.currentList = this._traverse(listInfo,[input, 'List_Info']);
         return _self._when("list", "isReady", input, true).then(function () {
             return _self.currentList;
         });
@@ -723,7 +725,7 @@ Yamaha.prototype.list.get = function (input) {
  * @returns {boolean}
  */
 Yamaha.prototype.list.hasSelectableItems = function () {
-    return this.currentList.Current_List[0].Line_1[0].Attribute[0]._text !== "Unselectable";
+    return this._traverse(this.currentList,['Current_List','Line_1','Attribute'], true) !== "Unselectable";
 };
 
 /**
@@ -731,7 +733,7 @@ Yamaha.prototype.list.hasSelectableItems = function () {
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
-    return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Container"
+    return this._traverse(this.currentList,['Current_List','Line_' + itemNumber,'Attribute'], true) === "Container"
 };
 
 /**
@@ -739,7 +741,7 @@ Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsItem = function (list, itemNumber) {
-    return this.currentList.Current_List[0]['Line_' + itemNumber][0].Attribute[0]._text === "Item"
+    return this._traverse(this.currentList,['Current_List','Line_' + itemNumber,'Attribute'], true) === "Item"
 };
 
 /**
@@ -750,7 +752,7 @@ Yamaha.prototype.list.isReady = function (list) {
     if (!list) {
         list = this.currentList;
     }
-    return this.currentList.Menu_Status[0]._text === "Ready";
+    return this._traverse(this.currentList,['Menu_Status'], true) === "Ready";
 };
 
 /**
@@ -758,7 +760,7 @@ Yamaha.prototype.list.isReady = function (list) {
  * @returns {String}
  */
 Yamaha.prototype.list.getMenuLayer = function () {
-    return parseInt(this.currentList.Menu_Layer[0]._text);
+    return parseInt(this._traverse(this.currentList,['Menu_Layer'], true));
 };
 
 /**
@@ -766,7 +768,7 @@ Yamaha.prototype.list.getMenuLayer = function () {
  * @returns {String}
  */
 Yamaha.prototype.list.getMenuName = function () {
-    return this.currentList.Menu_Name[0]._text;
+    return this._traverse(this.currentList,['Menu_Name'], true);
 };
 
 //----------LIST METHODS END----------
@@ -822,27 +824,27 @@ Yamaha.prototype.network._createCommand = function (type, command) {
 Yamaha.prototype.network.getName = function () {
     var command = this.network._createCommand('GET', 'Network_Name');
     return this._sendXMLToReceiver(command).then(function (response) {
-        return this._traverse(response,['System','Misc','Network', 'Network_Name'],true)
+        return this._traverse(response, ['System', 'Misc', 'Network', 'Network_Name'], true)
     }.bind(this));
 };
 
 Yamaha.prototype.network.getStandby = function () {
     var command = this.network._createCommand('GET', 'Network_Standby');
     return this._sendXMLToReceiver(command).then(function (response) {
-        return this._traverse(response,['System','Misc','Network', 'Network_Standby'],true) === 'On'
+        return this._traverse(response, ['System', 'Misc', 'Network', 'Network_Standby'], true) === 'On'
     }.bind(this));
 };
 
 Yamaha.prototype.network.getMacFilter = function () {
     var command = this.network._createCommand('GET', 'MAC_Address_Filter');
     return this._sendXMLToReceiver(command).then(function (response) {
-        var addresses = this._traverse(response,['System','Misc','Network', 'MAC_Address_Filter', 'Address']);
+        var addresses = this._traverse(response, ['System', 'Misc', 'Network', 'MAC_Address_Filter', 'Address']);
         return {
-            isOn: this._traverse(response,['System','Misc','Network', 'MAC_Address_Filter', 'Mode'],true) === 'On',
+            isOn: this._traverse(response, ['System', 'Misc', 'Network', 'MAC_Address_Filter', 'Mode'], true) === 'On',
             addresses: Object.keys(addresses).reduce(function (arr, addressKey) {
                 arr.push(addresses[addressKey][0]['_text']);
                 return arr;
-            },[])
+            }, [])
         };
     }.bind(this));
 };
