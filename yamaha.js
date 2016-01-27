@@ -236,7 +236,6 @@ Yamaha.prototype._traverse = function (xmlObject, traverseArray, getTextNode) {
         result = JSON.parse(JSON.stringify(xmlObject));
 
     //walk through YAMAHA_AV if present
-    if (!result) debugger;
     if (result['YAMAHA_AV'] && result['YAMAHA_AV'][0]) {
         result = result['YAMAHA_AV'][0];
     }
@@ -415,8 +414,10 @@ Yamaha.prototype.getBasicInfo = function (zone, prettyJson) {
                 currentVolume: _self._getVolume(info),
                 isMuted: _self._isMuted(info),
                 currentInput: _self._getCurrentInput(info),
+                currentSoundProgram: _self._getCurrentSoundProgram(info),
                 pureDirect: _self._isPureDirectEnabled(info),
-                partyMode: _self._isPartyModeEnabled(info)
+                partyMode: _self._isPartyModeEnabled(info),
+                enhancer: _self._isEnhancerEnabled(info)
             };
         }
         return info;
@@ -483,6 +484,14 @@ Yamaha.prototype.isOn = function (zone) {
 
 Yamaha.prototype._getCurrentInput = function (basicStatus) {
     return this._traverse(basicStatus, ['Input', 'Input_Sel'], true);
+};
+
+Yamaha.prototype._isEnhancerEnabled = function (basicStatus) {
+    return this._traverse(basicStatus, ['Surround', 'Program_Sel', 'Current', 'Enhancer'], true) === 'On';
+};
+
+Yamaha.prototype._getCurrentSoundProgram = function (basicStatus) {
+    return this._traverse(basicStatus, ['Surround', 'Program_Sel', 'Current', 'Sound_Program'], true);
 };
 /**
  * Gets current input name (string)
@@ -599,7 +608,7 @@ Yamaha.prototype._getAvailableInputs = function (systemConfig) {
         if (inputsXML.hasOwnProperty(propertyName)) {
             inputs.push({
                 id: propertyName,
-                name: this._traverse(systemConfig,[propertyName], true)
+                name: this._traverse(inputsXML,[propertyName], true)
             });
         }
     }
@@ -694,6 +703,11 @@ Yamaha.prototype.setTrebleLevel = function (trebleLevel) {
 Yamaha.prototype.setEnhancer = function (enhancerState) {
     var zone = 'Main_Zone';
     var command = this._createZoneCommand('PUT', zone, '<Surround><Program_Sel><Current><Enhancer>' + this._getOnOffCaption(enhancerState) + '</Enhancer></Current></Program_Sel></Surround>');
+    return this._sendXMLToReceiver(command);
+};
+Yamaha.prototype.setPureDirect = function (pureDirectState) {
+    var zone = 'Main_Zone';
+    var command = this._createZoneCommand('PUT', zone, '<Sound_Video><Pure_Direct><Mode>' + this._getOnOffCaption(pureDirectState) + '</Mode></Pure_Direct></Sound_Video>');
     return this._sendXMLToReceiver(command);
 };
 
