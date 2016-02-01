@@ -178,31 +178,6 @@ Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
 };
 
 /**
- * long polling of any request made to the receiver
- * @param callType - the method type (prefix) to be called
- * @param methodName - the metod name to be called
- * @param parameter - argument to pass to the above method
- * @param expectedReturnValue - stop polling when this value meets our requirements
- * @private
- * @returns {Promise}
- */
-Yamaha.prototype._when = function (callType, methodName, parameter, expectedReturnValue) {
-    var self = this;
-    return new Promise(function (resolve, reject) {
-        var tries = 0,
-            interval = setInterval(function () {
-                var result = self[callType][methodName](parameter);
-                if (result == expectedReturnValue) {
-                    clearInterval(interval);
-                    resolve();
-                }
-                tries++;
-                if (tries > 40) reject("Timeout");
-
-            }, 500);
-    });
-};
-/**
  * Simply gets 'On' or 'Off' caption, depending on the incoming state
  * @param {Boolean} state
  * @returns {string}
@@ -728,46 +703,51 @@ Yamaha.prototype.list.get = function (input) {
         command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
     return this._sendXMLToReceiver(command).then(function (listInfo) {
         _self.currentList = _self._traverse(listInfo,[input, 'List_Info']);
-        return _self._when("list", "isReady", input, true).then(function () {
-            var retObj = {
-                    list: [],
-                    header: '',
-                    level: 1,
-                    numItems: 0
-                },
-                list = _self._traverse(_self.currentList, ['Current_List']),
-                listItem, listItemName, type,
-                i, currentPage, maxPage, promise;
-
-            //get each item from the list
-            for(listItemName in list) {
-                if(list.hasOwnProperty(listItemName)) {
-                    listItem = _self._traverse(list, [listItemName]);
-                    //type can be on of the following: "Item", "Container", "Unselectable"
-                    type = _self._traverse(listItem, ['Attribute'], true);
-                    if(type !== 'Unselectable') {
-                        retObj.list.push({
-                            type: type === 'Item'? 0:1,
-                            name: _self._traverse(listItem, ['Txt'], true)
-                        });
-                    }
-                }
-            }
-            //get list header
-            retObj.header = _self._traverse(_self.currentList, ['Menu_Name'], true);
-            //get list level
-            retObj.level = _self._traverse(_self.currentList, ['Menu_Layer'], true);
-            //get number of items in the list
-            retObj.numItems = _self._traverse(_self.currentList, ['Cursor_Position', 'Max_Line'], true);
-            //get cursorPosition
-            retObj.cursorPosition = _self._traverse(_self.currentList, ['Cursor_Position', 'Current_Line'], true);
-
-            //now get the FULL list, one after another
-            currentPage = 1;
-            maxPage = Math.ceil(retObj.numItems/8);
-            //TODO: Add full list scan
-        });
+        if(_self.list.isReady(_self.currentList)) {
+            return _self.list.parse(_self.currentList);
+        }
+        else {
+            //TODO: this should stop after N iterations. Infinite cycles are bad for your PC's health.
+            return Promise.resolve().then(_self.list.get.bind(_self, input));
+        }
     });
+};
+
+Yamaha.prototype.list.parse = function () {
+    var _self = this;
+    var retObj = {
+            list: [],
+            header: '',
+            level: 1,
+            numItems: 0
+        },
+        list = _self._traverse(_self.currentList, ['Current_List']),
+        listItem, listItemName, type,
+        i, currentPage, maxPage, promise;
+
+    //get each item from the list
+    for(listItemName in list) {
+        if(list.hasOwnProperty(listItemName)) {
+            listItem = _self._traverse(list, [listItemName]);
+            //type can be on of the following: "Item", "Container", "Unselectable"
+            type = _self._traverse(listItem, ['Attribute'], true);
+            if(type !== 'Unselectable') {
+                retObj.list.push({
+                    type: type === 'Item'? 0:1,
+                    name: _self._traverse(listItem, ['Txt'], true)
+                });
+            }
+        }
+    }
+    //get list header
+    retObj.header = _self._traverse(_self.currentList, ['Menu_Name'], true);
+    //get list level
+    retObj.level = _self._traverse(_self.currentList, ['Menu_Layer'], true);
+    //get number of items in the list
+    retObj.numItems = _self._traverse(_self.currentList, ['Cursor_Position', 'Max_Line'], true);
+    //get cursorPosition
+    retObj.cursorPosition = _self._traverse(_self.currentList, ['Cursor_Position', 'Current_Line'], true);
+    return retObj;
 };
 
 Yamaha.prototype.list.nextPage = function (input) {
