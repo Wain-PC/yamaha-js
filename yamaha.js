@@ -727,11 +727,53 @@ Yamaha.prototype.list.get = function (input) {
     var _self = this,
         command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
     return this._sendXMLToReceiver(command).then(function (listInfo) {
-        _self.currentList = this._traverse(listInfo,[input, 'List_Info']);
+        _self.currentList = _self._traverse(listInfo,[input, 'List_Info']);
         return _self._when("list", "isReady", input, true).then(function () {
-            return _self.currentList;
+            var retObj = {
+                    list: [],
+                    header: '',
+                    level: 1,
+                    numItems: 0
+                },
+                list = _self._traverse(_self.currentList, ['Current_List']),
+                listItem, listItemName, type,
+                i, currentPage, maxPage, promise;
+
+            //get each item from the list
+            for(listItemName in list) {
+                if(list.hasOwnProperty(listItemName)) {
+                    listItem = _self._traverse(list, [listItemName]);
+                    //type can be on of the following: "Item", "Container", "Unselectable"
+                    type = _self._traverse(listItem, ['Attribute'], true);
+                    if(type !== 'Unselectable') {
+                        retObj.list.push({
+                            type: type === 'Item'? 0:1,
+                            name: _self._traverse(listItem, ['Txt'], true)
+                        });
+                    }
+                }
+            }
+            //get list header
+            retObj.header = _self._traverse(_self.currentList, ['Menu_Name'], true);
+            //get list level
+            retObj.level = _self._traverse(_self.currentList, ['Menu_Layer'], true);
+            //get number of items in the list
+            retObj.numItems = _self._traverse(_self.currentList, ['Cursor_Position', 'Max_Line'], true);
+            //get cursorPosition
+            retObj.cursorPosition = _self._traverse(_self.currentList, ['Cursor_Position', 'Current_Line'], true);
+
+            //now get the FULL list, one after another
+            currentPage = 1;
+            maxPage = Math.ceil(retObj.numItems/8);
+            //TODO: Add full list scan
         });
     });
+};
+
+Yamaha.prototype.list.nextPage = function (input) {
+    //command: <YAMAHA_AV cmd="PUT"><NET_RADIO><List_Control><Page>Down</Page></List_Control></NET_RADIO></YAMAHA_AV>
+    var command = this._createCommand('PUT', input, '<List_Control><Page>Down</Page></List_Control>');
+    return this._sendXMLToReceiver(command);
 };
 
 /**
@@ -743,7 +785,7 @@ Yamaha.prototype.list.hasSelectableItems = function () {
 };
 
 /**
- * Checks if the list item is a folder, so we will get another list if this item will be selected
+ * Checks if list item is a folder, so we will get another list if this item will be selected
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
@@ -751,7 +793,7 @@ Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
 };
 
 /**
- * Checks if the list item is a folder, so it will be played when selected
+ * Checks if list item is a folder, so it will be played when selected
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsItem = function (list, itemNumber) {
