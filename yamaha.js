@@ -223,7 +223,7 @@ Yamaha.prototype._traverse = function (xmlObject, traverseArray, getTextNode) {
 
         }
 
-        if(getTextNode) {
+        if (getTextNode) {
             if (result && result.hasOwnProperty('_text') && typeof result['_text'] !== 'object') {
                 return result['_text'];
             }
@@ -332,8 +332,8 @@ Yamaha.prototype.setVolume = function (zone, to) {
  * @param by {Number} increase volume of the active zone by the given value (this value will be summed to the current volume)
  * @returns {Promise}
  */
-Yamaha.prototype.volumeUp = function (zone,by) {
-    return this.adjustVolumeBy(zone,by);
+Yamaha.prototype.volumeUp = function (zone, by) {
+    return this.adjustVolumeBy(zone, by);
 };
 
 /**
@@ -519,13 +519,13 @@ Yamaha.prototype.getSystemConfig = function (prettyJson) {
     var command = this._createCommand('GET', 'System', '<Config>GetParam</Config>'),
         _self = this;
     return this._sendXMLToReceiver(command).then(function (systemConfig) {
-        systemConfig = this._traverse(systemConfig,['System', 'Config']);
+        systemConfig = this._traverse(systemConfig, ['System', 'Config']);
         if (prettyJson) {
             return {
                 availableZones: _self._getAvailableZones(systemConfig),
-                modelName: this._traverse(systemConfig,['Model_Name'], true),
-                systemId: this._traverse(systemConfig,['System_ID'], true),
-                version: this._traverse(systemConfig,['Version'], true)
+                modelName: this._traverse(systemConfig, ['Model_Name'], true),
+                systemId: this._traverse(systemConfig, ['System_ID'], true),
+                version: this._traverse(systemConfig, ['Version'], true)
             }
         }
         return systemConfig;
@@ -553,12 +553,12 @@ Yamaha.prototype.getZoneConfig = function (zone, prettyJson) {
         sceneName,
         scenes;
     return this._sendXMLToReceiver(command).then(function (zoneConfig) {
-        zoneConfig = this._traverse(zoneConfig,[zone, 'Config']);
+        zoneConfig = this._traverse(zoneConfig, [zone, 'Config']);
         if (prettyJson) {
             retObj = {
-                isReady: this._traverse(zoneConfig,['Feature_Availability'], true) === 'Ready',
-                volumeExistence: this._traverse(zoneConfig,['Volume_Existence'], true) === 'Exists',
-                name: this._traverse(zoneConfig,['Name', 'Zone'], true),
+                isReady: this._traverse(zoneConfig, ['Feature_Availability'], true) === 'Ready',
+                volumeExistence: this._traverse(zoneConfig, ['Volume_Existence'], true) === 'Exists',
+                name: this._traverse(zoneConfig, ['Name', 'Zone'], true),
                 scenes: []
             };
 
@@ -585,10 +585,10 @@ Yamaha.prototype.getZoneConfig = function (zone, prettyJson) {
 Yamaha.prototype.getAvailableInputs = function (zone) {
     var command = this._createZoneCommand('GET', zone, '<Input><Input_Sel_Item>GetParam</Input_Sel_Item></Input>');
     return this._sendXMLToReceiver(command).then(function (data) {
-        var inputsArray = this._traverse(data,[zone, 'Input', 'Input_Sel_Item']),
+        var inputsArray = this._traverse(data, [zone, 'Input', 'Input_Sel_Item']),
             inputObj, inputName, outputArray = [];
         for (inputName in inputsArray) {
-            if(inputsArray.hasOwnProperty(inputName)) {
+            if (inputsArray.hasOwnProperty(inputName)) {
                 inputObj = {
                     id: this._traverse(inputsArray, [inputName, 'Src_Name'], true) || this._traverse(inputsArray, [inputName, 'Param'], true),
                     name: this._traverse(inputsArray, [inputName, 'Title'], true)
@@ -603,9 +603,9 @@ Yamaha.prototype.getAvailableInputs = function (zone) {
 
 Yamaha.prototype._getAvailableZones = function (systemConfig) {
     var inputs = [],
-        features = this._traverse(systemConfig,['Feature_Existence']);
+        features = this._traverse(systemConfig, ['Feature_Existence']);
     for (var feature in features) {
-        if (features.hasOwnProperty(feature) && (feature === 'Main_Zone' || feature.indexOf('Zone_') === -0) && this._traverse(features,[feature], true) === 1) {
+        if (features.hasOwnProperty(feature) && (feature === 'Main_Zone' || feature.indexOf('Zone_') === -0) && this._traverse(features, [feature], true) === 1) {
             inputs.push(feature);
         }
     }
@@ -618,18 +618,6 @@ Yamaha.prototype._getAvailableZones = function (systemConfig) {
  */
 Yamaha.prototype.getAvailableZones = function () {
     return this.getSystemConfig().then(this._getAvailableZones);
-};
-
-/**
- * Select one item from the list.
- * Yamaha receivers currently support items from 1 to 8
- * @param input - input to get the list from
- * @param number - # of item (1 to 8)
- * @returns {Promise}
- */
-Yamaha.prototype.selectItem = function (input, number) {
-    var command = this._createCommand('PUT', input, '<List_Control><Direct_Sel>Line_' + number + '</Direct_Sel></List_Control>');
-    return this._sendXMLToReceiver(command);
 };
 
 //----------SOUND SETTINGS BEGIN----------
@@ -689,8 +677,8 @@ Yamaha.prototype.list.get = function (input) {
     var _self = this,
         command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
     return this._sendXMLToReceiver(command).then(function (listInfo) {
-        _self.currentList = _self._traverse(listInfo,[input, 'List_Info']);
-        if(_self.list.isReady(_self.currentList)) {
+        _self.currentList = _self._traverse(listInfo, [input, 'List_Info']);
+        if (_self.list.isReady(_self.currentList)) {
             return _self.list.parse(_self.currentList);
         }
         else {
@@ -713,14 +701,14 @@ Yamaha.prototype.list.parse = function () {
         i, currentPage, maxPage, promise;
 
     //get each item from the list
-    for(listItemName in list) {
-        if(list.hasOwnProperty(listItemName)) {
+    for (listItemName in list) {
+        if (list.hasOwnProperty(listItemName)) {
             listItem = _self._traverse(list, [listItemName]);
             //type can be on of the following: "Item", "Container", "Unselectable"
             type = _self._traverse(listItem, ['Attribute'], true);
-            if(type !== 'Unselectable') {
+            if (type !== 'Unselectable') {
                 retObj.list.push({
-                    type: type === 'Item'? 0:1,
+                    type: type === 'Item' ? 0 : 1,
                     name: _self._traverse(listItem, ['Txt'], true)
                 });
             }
@@ -737,8 +725,13 @@ Yamaha.prototype.list.parse = function () {
     return retObj;
 };
 
+Yamaha.prototype.list.prevPage = function (input) {
+    var command = this._createCommand('PUT', input, '<List_Control><Page>Up</Page></List_Control>');
+    return this._sendXMLToReceiver(command);
+};
+
+
 Yamaha.prototype.list.nextPage = function (input) {
-    //command: <YAMAHA_AV cmd="PUT"><NET_RADIO><List_Control><Page>Down</Page></List_Control></NET_RADIO></YAMAHA_AV>
     var command = this._createCommand('PUT', input, '<List_Control><Page>Down</Page></List_Control>');
     return this._sendXMLToReceiver(command);
 };
@@ -748,7 +741,7 @@ Yamaha.prototype.list.nextPage = function (input) {
  * @returns {boolean}
  */
 Yamaha.prototype.list.hasSelectableItems = function () {
-    return this._traverse(this.currentList,['Current_List','Line_1','Attribute'], true) !== "Unselectable";
+    return this._traverse(this.currentList, ['Current_List', 'Line_1', 'Attribute'], true) !== "Unselectable";
 };
 
 /**
@@ -756,7 +749,7 @@ Yamaha.prototype.list.hasSelectableItems = function () {
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
-    return this._traverse(this.currentList,['Current_List','Line_' + itemNumber,'Attribute'], true) === "Container"
+    return this._traverse(this.currentList, ['Current_List', 'Line_' + itemNumber, 'Attribute'], true) === "Container"
 };
 
 /**
@@ -764,7 +757,7 @@ Yamaha.prototype.list.itemIsFolder = function (list, itemNumber) {
  * @returns {boolean}
  */
 Yamaha.prototype.list.itemIsItem = function (list, itemNumber) {
-    return this._traverse(this.currentList,['Current_List','Line_' + itemNumber,'Attribute'], true) === "Item"
+    return this._traverse(this.currentList, ['Current_List', 'Line_' + itemNumber, 'Attribute'], true) === "Item"
 };
 
 /**
@@ -775,23 +768,45 @@ Yamaha.prototype.list.isReady = function (list) {
     if (!list) {
         list = this.currentList;
     }
-    return this._traverse(this.currentList,['Menu_Status'], true) === "Ready";
+    return this._traverse(this.currentList, ['Menu_Status'], true) === "Ready";
 };
 
-/**
- * Gets the depth of the current menu layer
- * @returns {String}
- */
-Yamaha.prototype.list.getMenuLayer = function () {
-    return parseInt(this._traverse(this.currentList,['Menu_Layer'], true));
-};
 
 /**
- * Gets the current menu name
- * @returns {String}
+ * Select one item from the list.
+ * Yamaha receivers currently support items from 1 to 8
+ * @param input - input to get the list from
+ * @param itemNumber - # of item (1 to 8)
+ * @returns {Promise}
  */
-Yamaha.prototype.list.getMenuName = function () {
-    return this._traverse(this.currentList,['Menu_Name'], true);
+Yamaha.prototype.list.selectItem = function (input, itemNumber) {
+    var command;
+    if(itemNumber<1) {
+        itemNumber = 1;
+    }
+    if(itemNumber>8) {
+        itemNumber = 8;
+    }
+    command = this._createCommand('PUT', input, '<List_Control><Direct_Sel>Line_' + itemNumber + '</Direct_Sel></List_Control>');
+    return this._sendXMLToReceiver(command);
+};
+/**
+ * Selects the item on the list (experimental API)
+ * @returns {Promise}
+ */
+Yamaha.prototype.list.jumpLine = function (input, itemNumber) {
+
+    var command = this._createCommand('PUT', input, '<List_Control><Jump_Line>' + itemNumber + '</Jump_Line></List_Control>');
+    return this._sendXMLToReceiver(command);
+};
+/**
+ * Goes one level higher on the list
+ * @returns {Promise}
+ */
+Yamaha.prototype.list.back = function (input) {
+    //<YAMAHA_AV cmd="PUT"><NET_RADIO><List_Control><Cursor>Return</Cursor></List_Control></NET_RADIO></YAMAHA_AV>
+    var command = this._createCommand('PUT', input, '<List_Control><Cursor>Return</Cursor></List_Control>');
+    return this._sendXMLToReceiver(command);
 };
 
 //----------LIST METHODS END----------
@@ -886,35 +901,18 @@ Yamaha.prototype.network.getInfo = function () {
 //----------NETWORK METHODS END
 
 
-/**
- * Turns the receiver on and selects the radio on the favorite list (if any)
- * @param stationNumber - number of the radio station on the list
- * @returns {Promise}
- */
-Yamaha.prototype.playWebRadioInZone2 = function (stationNumber) {
-    var _self = this,
-        inputName = 'NET RADIO';
-    //chain the commands in the following order
-    //1. turn the receiver zone 2 ON
-    return this.powerOn(2)
-        //then set the input to net radio
-        .then(function () {
-            return _self.setInputTo(inputName);
-        })
-        //then get the list
-        .then(function () {
-            return _self.getList(inputName)
-        })
-        //then select the first item (it would be Bookmarks)
-        .then(function () {
-            return _self.selectItem(inputName, 1);
-        })
-        //then select the first item again (this would be the genre, e.g. Rock)
-        .then(function () {
-            return _self.selectItem(inputName, 1);
-        })
-        //and finally select the desired station from the list
-        .then(function () {
-            return _self.selectItem(inputName, stationNumber);
-        })
+//----------COMMON METHODS BEGIN
+
+Yamaha.prototype.dimDisplay = function (level) {
+    //level must be from 1 to 3
+    if(level < 1) {
+        level = 1;
+    }
+    if(level>3) {
+        level = 3;
+    }
+    var command = this._createCommand('PUT', 'System', '<Misc><Display><FL><Dimmer>' + level + '</Dimmer></FL></Display></Misc>');
+    return this._sendXMLToReceiver(command);
 };
+
+//----------COMMON METHODS END
