@@ -223,8 +223,13 @@ Yamaha.prototype._traverse = function (xmlObject, traverseArray, getTextNode) {
 
         }
 
-        if (getTextNode && result && result.hasOwnProperty('_text')) {
-            return result['_text'];
+        if(getTextNode) {
+            if (result && result.hasOwnProperty('_text') && typeof result['_text'] !== 'object') {
+                return result['_text'];
+            }
+            else {
+                return null;
+            }
         }
         return result;
     }
@@ -517,7 +522,6 @@ Yamaha.prototype.getSystemConfig = function (prettyJson) {
         systemConfig = this._traverse(systemConfig,['System', 'Config']);
         if (prettyJson) {
             return {
-                availableInputs: _self._getAvailableInputs(systemConfig),
                 availableZones: _self._getAvailableZones(systemConfig),
                 modelName: this._traverse(systemConfig,['Model_Name'], true),
                 systemId: this._traverse(systemConfig,['System_ID'], true),
@@ -573,44 +577,27 @@ Yamaha.prototype.getZoneConfig = function (zone, prettyJson) {
     }.bind(this));
 };
 
-Yamaha.prototype._getAvailableInputs = function (systemConfig) {
-    var inputs = [],
-        inputsXML = this._traverse(systemConfig,['Name', 'Input']),
-        propertyName, input;
-
-    //add all common inputs
-    for (propertyName in inputsXML) {
-        if (inputsXML.hasOwnProperty(propertyName)) {
-            inputs.push({
-                id: propertyName,
-                name: this._traverse(inputsXML,[propertyName], true)
-            });
-        }
-    }
-    //add special features (like Net Radio or AirPlay)
-    inputsXML = this._traverse(systemConfig,['Feature_Existence']);
-    for (propertyName in inputsXML) {
-        if (inputsXML.hasOwnProperty(propertyName)) {
-            //add all except zones
-            if (propertyName !== 'Main_Zone' && propertyName.indexOf('Zone_') !== 0 && this._traverse(inputsXML,[propertyName], true) === 1) {
-                inputs.push({
-                    id: propertyName,
-                    name: propertyName
-                });
-            }
-        }
-    }
-
-    return inputs;
-};
-
 /**
  * Get all available inputs for this receiver.
  * We should probably use them to check input availability before changing inputs
  * @returns {Promise}
  */
-Yamaha.prototype.getAvailableInputs = function () {
-    return this.getSystemConfig().then(this._getAvailableInputs);
+Yamaha.prototype.getAvailableInputs = function (zone) {
+    var command = this._createZoneCommand('GET', zone, '<Input><Input_Sel_Item>GetParam</Input_Sel_Item></Input>');
+    return this._sendXMLToReceiver(command).then(function (data) {
+        var inputsArray = this._traverse(data,[zone, 'Input', 'Input_Sel_Item']),
+            inputObj, inputName, outputArray = [];
+        for (inputName in inputsArray) {
+            if(inputsArray.hasOwnProperty(inputName)) {
+                inputObj = {
+                    id: this._traverse(inputsArray, [inputName, 'Src_Name'], true) || this._traverse(inputsArray, [inputName, 'Param'], true),
+                    name: this._traverse(inputsArray, [inputName, 'Title'], true)
+                };
+                outputArray.push(inputObj);
+            }
+        }
+        return outputArray;
+    }.bind(this));
 };
 
 
