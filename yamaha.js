@@ -148,11 +148,11 @@ Yamaha.prototype._createZoneCommand = function (type, zone, command) {
     return this._createCommand(type, zone, command);
 };
 
-Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
+Yamaha.prototype._sendXMLToReceiver = function (bodyText, xml) {
     var _self = this;
     return new Promise(function (resolve, reject) {
         var request = new XMLHttpRequest();
-        var url = 'http://' + _self.ip + '/YamahaRemoteControl/ctrl';
+        var url =  'http://' + _self.ip + '/YamahaRemoteControl/' + (!xml?'ctrl' : 'desc.xml');
 
         request.onreadystatechange = function () {
             if (this.readyState == 4) {
@@ -172,7 +172,7 @@ Yamaha.prototype._sendXMLToReceiver = function (bodyText) {
             reject(new Error("Network Error"));
         };
 
-        request.open("POST", url, true);
+        request.open(xml?"GET":"POST", url, true);
         request.send(bodyText);
     });
 };
@@ -597,6 +597,31 @@ Yamaha.prototype.getAvailableInputs = function (zone) {
             }
         }
         return outputArray;
+    }.bind(this));
+};
+
+
+/**
+ * Get all available sound programs for this receiver.
+ * Extremely hacky way of doing things, as I don't know a valid way to get a list of sound programs through the normal API
+ * I assume it'll break on other receivers due to different object location
+ * TODO: It'll be better to parse the output in text.
+ * @returns {Promise}
+ */
+Yamaha.prototype.getAvailableSoundPrograms = function () {
+    return this._sendXMLToReceiver(null, true).then(function (data) {
+        //console.log(data);
+        var list = data['Unit_Description'][0]['Menu'][1]['Menu'][6]['Menu'][0]['Menu'][0]['Get'][0]['Param_1'][0]['Direct'],
+            i, outputArray = [],
+            length = list.length;
+        for(i=0;i<length;i++) {
+            outputArray.push({
+                id: list[i]['_text'],
+                name: list[i]['_text']
+            })
+        }
+        return outputArray;
+
     }.bind(this));
 };
 
