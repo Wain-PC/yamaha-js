@@ -15,6 +15,8 @@ function Yamaha(options) {
     this.ip = '192.168.1.2';
     this.zones = 2;
     this.currentList = null;
+    this.list.busyRetryTimeout = 1000;
+    this.list.busyRetryCount = 50;
 
     for (var param in options) {
         if (options.hasOwnProperty(param) && (this.hasOwnProperty(param))) {
@@ -29,7 +31,7 @@ function Yamaha(options) {
     }
 
     for (var method in this.list) {
-        if (this.list.hasOwnProperty(method)) {
+        if (this.list.hasOwnProperty(method) && this.list[method] instanceof Function) {
             this.list[method] = this.list[method].bind(this);
         }
     }
@@ -610,7 +612,6 @@ Yamaha.prototype.getAvailableInputs = function (zone) {
  */
 Yamaha.prototype.getAvailableSoundPrograms = function () {
     return this._sendXMLToReceiver(null, true).then(function (data) {
-        //console.log(data);
         var list = data['Unit_Description'][0]['Menu'][1]['Menu'][6]['Menu'][0]['Menu'][0]['Get'][0]['Param_1'][0]['Direct'],
             i, outputArray = [],
             length = list.length;
@@ -700,7 +701,8 @@ Yamaha.prototype.list = {};
  */
 Yamaha.prototype.list.get = function (input) {
     var _self = this,
-        command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>');
+        command = this._createCommand('GET', input, '<List_Info>GetParam</List_Info>'),
+        counter = 0;
     return this._sendXMLToReceiver(command).then(function (listInfo) {
         _self.currentList = _self._traverse(listInfo, [input, 'List_Info']);
         if (_self.list.isReady(_self.currentList)) {
@@ -708,7 +710,14 @@ Yamaha.prototype.list.get = function (input) {
         }
         else {
             //TODO: this should stop after N iterations. Infinite cycles are bad for your PC's health.
-            return Promise.resolve().then(_self.list.get.bind(_self, input));
+            //TODO; №2: add a pause between the tries
+            return new Promise(function (resolve, reject) {
+                if(counter<_self.list.busyRetryCount) {
+                    counter++;
+                    return setTimeout(resolve, _self.list.busyRetryTimeout);
+                }
+                return reject("The list was busy for %s iterations, assuming it's failed", _self.list.busyRetryTimeout);
+            }).then(_self.list.get.bind(_self, input));
         }
     });
 };
